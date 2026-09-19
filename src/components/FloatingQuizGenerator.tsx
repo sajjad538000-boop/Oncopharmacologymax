@@ -38,6 +38,8 @@ export const FloatingQuizGenerator: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
 
   // Load saved API key on mount
   useEffect(() => {
@@ -61,15 +63,18 @@ export const FloatingQuizGenerator: React.FC = () => {
   ];
 
   const handleStartGeneration = async () => {
-    const trimmedKey = apiKey.trim();
+    const trimmedKey = apiKey.trim().replace(/^["']|["']$/g, "");
     if (!trimmedKey) {
-      setError("حقل مفتاح API إلزامي لتوليد الأسئلة دون استهلاك حدود المنصة.");
+      setError("حقل مفتاح API إلزامي لتوليد أسئلة متجددة بالذكاء الاصطناعي، أو يمكنك استخدام بنك الأسئلة المعتمد أدناه.");
+      setErrorDetails(null);
       return;
     }
 
     // Save key locally for convenience
     localStorage.setItem("visitor_gemini_api_key", trimmedKey);
     setError(null);
+    setErrorDetails(null);
+    setShowErrorDetails(false);
     setStep("loading");
     setUserAnswers({});
     setCurrentIndex(0);
@@ -88,6 +93,9 @@ export const FloatingQuizGenerator: React.FC = () => {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
+        if (data.details) {
+          setErrorDetails(data.details);
+        }
         throw new Error(data.error || "تعذر توليد الأسئلة. يرجى التحقق من صحة المفتاح.");
       }
 
@@ -99,7 +107,40 @@ export const FloatingQuizGenerator: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Quiz generation error:", err);
-      setError(err.message || "حدث خطأ غير متوقع أثناء توليد الأسئلة.");
+      setError(err.message || "حدث خطأ أثناء معالجة الطلب عبر الذكاء الاصطناعي.");
+      setStep("config");
+    }
+  };
+
+  const handleUseCuratedBank = async () => {
+    setError(null);
+    setErrorDetails(null);
+    setShowErrorDetails(false);
+    setStep("loading");
+    setUserAnswers({});
+    setCurrentIndex(0);
+
+    try {
+      const res = await fetch("/api/generate-mcqs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          useCuratedBackup: true,
+          count,
+          questionType,
+          topic: selectedTopic === "All Topics" ? undefined : selectedTopic
+        })
+      });
+
+      const data = await res.json();
+      if (Array.isArray(data.questions) && data.questions.length > 0) {
+        setQuestions(data.questions);
+        setStep("quiz");
+      } else {
+        throw new Error("تعذر تحميل بنك الأسئلة المعتمد.");
+      }
+    } catch (err: any) {
+      setError(err.message || "تعذر تحميل بنك الأسئلة المعتمد.");
       setStep("config");
     }
   };
@@ -193,9 +234,44 @@ export const FloatingQuizGenerator: React.FC = () => {
                 <div className="space-y-6">
                   {/* Error Notification */}
                   {error && (
-                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs sm:text-sm flex items-start gap-2.5">
-                      <AlertTriangle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                      <span>{error}</span>
+                    <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs sm:text-sm space-y-2.5">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 font-semibold leading-relaxed">
+                          {error}
+                        </div>
+                      </div>
+
+                      {/* Technical Details Accordion */}
+                      {errorDetails && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowErrorDetails(!showErrorDetails)}
+                            className="text-[11px] text-rose-600 dark:text-rose-400 underline font-medium hover:text-rose-800 dark:hover:text-rose-300 flex items-center gap-1"
+                          >
+                            <span>{showErrorDetails ? "إخفاء التفاصيل الفنية للخطأ" : "عرض التفاصيل الفنية للخطأ (Technical Details)"}</span>
+                          </button>
+                          {showErrorDetails && (
+                            <div className="mt-2 p-2.5 rounded-lg bg-black/10 dark:bg-black/30 font-mono text-[11px] text-slate-800 dark:text-slate-300 overflow-x-auto break-all select-all">
+                              {errorDetails}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Instant Fallback Button */}
+                      <div className="pt-1.5 border-t border-rose-200/60 dark:border-rose-900/60 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-400">لا ترغب باستخدام مفتاح API الآن؟</span>
+                        <button
+                          type="button"
+                          onClick={handleUseCuratedBank}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                        >
+                          <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                          <span>ابدأ بأسئلة السلايدات المعتمدة فوراً</span>
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -205,7 +281,7 @@ export const FloatingQuizGenerator: React.FC = () => {
                       <label className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
                         <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                         <span>مفتاح Gemini API الخاص بك</span>
-                        <span className="text-rose-600 dark:text-rose-400 font-bold text-xs">* (إلزامي)</span>
+                        <span className="text-rose-600 dark:text-rose-400 font-bold text-xs">* (إلزامي للتوليد الحي)</span>
                       </label>
 
                       <a
@@ -220,7 +296,7 @@ export const FloatingQuizGenerator: React.FC = () => {
                     </div>
 
                     <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                      لكي لا تتأثر الحصة الشخصية لحساب المنصة، يتطلب التوليد إدخال مفتاح Gemini API المجاني الخاص بك. يتم حفظ المفتاح في متصفحك محلياً فقط (Local Storage) ولا تتم مشاركته.
+                      لكي لا تتأثر الحصة الشخصية لحساب المنصة، يتطلب التوليد إدخال مفتاح Gemini API المجاني الخاص بك. يتم حفظ المفتاح في متصفحك محلياً فقط (Local Storage) دون مشاركته.
                     </p>
 
                     <div className="relative">
@@ -229,7 +305,7 @@ export const FloatingQuizGenerator: React.FC = () => {
                         type={showApiKey ? "text" : "password"}
                         value={apiKey}
                         onChange={(e) => {
-                          setApiKey(e.target.value);
+                          setApiKey(e.target.value.trim());
                           if (error) setError(null);
                         }}
                         placeholder="الصق مفتاحك هنا (مثال: AIzaSy...)"
@@ -243,6 +319,17 @@ export const FloatingQuizGenerator: React.FC = () => {
                         title={showApiKey ? "إخفاء المفتاح" : "إظهار المفتاح"}
                       >
                         {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                      <span>💡 نصيحة: تأكد من نسخ المفتاح كاملاً بدون مسافات إضافية.</span>
+                      <button
+                        type="button"
+                        onClick={handleUseCuratedBank}
+                        className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                      >
+                        أو تصفح بنك الأسئلة بدون مفتاح
                       </button>
                     </div>
                   </div>
@@ -540,12 +627,24 @@ export const FloatingQuizGenerator: React.FC = () => {
             <div className="px-5 py-3.5 sm:px-6 sm:py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex items-center justify-between">
               {step === "config" && (
                 <>
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="px-4 py-2 text-xs sm:text-sm font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                  >
-                    إلغاء
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsOpen(false)}
+                      className="px-3 py-2 text-xs sm:text-sm font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    >
+                      إلغاء
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleUseCuratedBank}
+                      className="hidden sm:flex px-3.5 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-xl border border-emerald-300 dark:border-emerald-800 items-center gap-1.5 transition-all"
+                      title="بدء الاختبار فوراً باستخدام الأسئلة المعتمدة المحفوظة دون الحاجة لـ API"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>بنك الأسئلة المعتمد</span>
+                    </button>
+                  </div>
 
                   <button
                     id="start-quiz-btn"
@@ -554,7 +653,7 @@ export const FloatingQuizGenerator: React.FC = () => {
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-500/20 hover:from-emerald-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
                   >
                     <Sparkles className="h-4 w-4" />
-                    <span>بدء توليد الاختبار 🚀</span>
+                    <span>بدء توليد الاختبار بالذكاء الاصطناعي 🚀</span>
                   </button>
                 </>
               )}

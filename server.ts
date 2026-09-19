@@ -299,14 +299,30 @@ app.post("/api/generate-mcqs", async (req, res) => {
       customFocus = "",
       count = 10,
       questionType = "mixed",
-      apiKey = ""
+      apiKey = "",
+      useCuratedBackup = false
     } = req.body || {};
 
-    const visitorKey = (typeof apiKey === "string" ? apiKey : "").trim();
+    // Allow user to use the pre-curated question bank without an API key if desired
+    if (useCuratedBackup) {
+      const shuffled = [...PRE_CURATED_MCQS].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, Math.min(PRE_CURATED_MCQS.length, Number(count) || 10));
+      return res.json({
+        success: true,
+        source: "curated_archive",
+        topic,
+        questionType,
+        count: selected.length,
+        questions: selected,
+        message: "تم تحميل أسئلة معتمدة عالية الأهمية من بنك أسئلة المحاضرة.",
+      });
+    }
+
+    const visitorKey = (typeof apiKey === "string" ? apiKey : "").trim().replace(/^["']|["']$/g, "");
     if (!visitorKey) {
       return res.status(400).json({
         success: false,
-        error: "مفتاح Gemini API إلزامي لتوليد الأسئلة. يرجى إدخال مفتاحك الشخصي للاستمرار دون التأثير على الحساب المشترك.",
+        error: "مفتاح Gemini API إلزامي لتوليد أسئلة متجددة. يرجى إدخال مفتاحك الشخصي أو استخدام بنك الأسئلة المعتمد.",
       });
     }
 
@@ -352,60 +368,87 @@ Format requirements:
 - Set questionType to either "direct" or "clinical" for each question.
 - Return ONLY valid JSON adhering to the specified schema.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt,
-      config: {
-        temperature: 0.7,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  question: { type: Type.STRING },
-                  options: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
+    // Try candidate models compatible with all public Google AI Studio keys
+    const candidateModels = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.8-flash"];
+    let lastError: any = null;
+    let parsedResult: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            temperature: 0.7,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                questions: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      question: { type: Type.STRING },
+                      options: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
+                      correctAnswerIndex: { type: Type.INTEGER },
+                      explanation: { type: Type.STRING },
+                      topic: { type: Type.STRING },
+                      slideReference: { type: Type.STRING },
+                      questionType: { type: Type.STRING },
+                    },
+                    required: [
+                      "id",
+                      "question",
+                      "options",
+                      "correctAnswerIndex",
+                      "explanation",
+                      "topic",
+                      "slideReference",
+                    ],
                   },
-                  correctAnswerIndex: { type: Type.INTEGER },
-                  explanation: { type: Type.STRING },
-                  topic: { type: Type.STRING },
-                  slideReference: { type: Type.STRING },
-                  questionType: { type: Type.STRING },
                 },
-                required: [
-                  "id",
-                  "question",
-                  "options",
-                  "correctAnswerIndex",
-                  "explanation",
-                  "topic",
-                  "slideReference",
-                ],
               },
+              required: ["questions"],
             },
           },
-          required: ["questions"],
-        },
-      },
-    });
+        });
 
-    const parsed = JSON.parse(response.text?.trim() || "{}");
-    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        const parsed = JSON.parse(response.text?.trim() || "{}");
+        if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+          parsedResult = parsed;
+          break; // Succeeded!
+        }
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || "");
+        // If it's a key or auth error, don't keep trying models
+        if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid") || msg.includes("PERMISSION_DENIED")) {
+          throw err;
+        }
+        // If 404 model not found, try next candidate model
+        continue;
+      }
+    }
+
+    if (parsedResult && Array.isArray(parsedResult.questions) && parsedResult.questions.length > 0) {
       return res.json({
         success: true,
         source: "gemini_ai",
         topic,
         questionType,
-        count: parsed.questions.length,
-        questions: parsed.questions,
-        message: `تم توليد ${parsed.questions.length} أسئلة بنجاح عبر Gemini AI باستخدام مفتاحك الشخصي.`,
+        count: parsedResult.questions.length,
+        questions: parsedResult.questions,
+        message: `تم توليد ${parsedResult.questions.length} أسئلة بنجاح عبر Gemini AI.`,
       });
+    }
+
+    if (lastError) {
+      throw lastError;
     }
 
     return res.status(500).json({
@@ -418,11 +461,15 @@ Format requirements:
     const errMsg = String(error?.message || "");
 
     if (errMsg.includes("API_KEY_INVALID") || errMsg.includes("invalid API key") || errMsg.includes("API key not valid")) {
-      userMsg = "مفتاح Gemini API غير صالح. يرجى التأكد من نسخ المفتاح الصحيح من Google AI Studio.";
-    } else if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota") || errMsg.includes("rate limit")) {
-      userMsg = "تم تجاوز الحصة المتاحة لمفتاح API الخاص بك. يرجى الانتظار قليلاً أو استخدام مفتاح آخر.";
+      userMsg = "مفتاح Gemini API غير صالح. تأكد من نسخ المفتاح كاملاً (يبدأ بـ AIzaSy...) من Google AI Studio دون نقص.";
+    } else if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota") || errMsg.includes("rate limit") || errMsg.includes("429")) {
+      userMsg = "تم تجاوز الحصة المجانية المؤقتة لمفتاحك (Rate Limit / Quota Exceeded). انتظر دقيقة واحدة أو استخدم مفتاحاً جديداً.";
+    } else if (errMsg.includes("User location is not supported") || errMsg.includes("location") || errMsg.includes("geoblocked")) {
+      userMsg = "خدمة Gemini API غير مدعومة في منطقتك الجغرافية الحالية بدون VPN. يرجى تفعيل VPN أو الاتصال بشبكة أخرى.";
     } else if (errMsg.includes("PERMISSION_DENIED")) {
-      userMsg = "تم رفض الإذن لمفتاح API. يرجى التأكد من تفعيل خدمة Gemini API لمفتاحك.";
+      userMsg = "تم رفض الإذن لمفتاح API (Permission Denied). تأكد من تفعيل خدمة Generative Language API لمشروعك.";
+    } else if (errMsg.includes("NOT_FOUND")) {
+      userMsg = "النموذج غير متاح لهذا المفتاح حالياً، يرجى إعادة المحاولة.";
     }
 
     return res.status(400).json({
