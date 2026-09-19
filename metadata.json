@@ -1,0 +1,6 @@
+{
+  "name": "Anti-Cancer Pharmacology Master Infographic & AI Quiz",
+  "description": "Comprehensive interactive illustrative infographic and Gemini AI MCQ generator covering cancer biology, chemotherapy classifications, regimens, and prevention.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

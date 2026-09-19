@@ -1,0 +1,25 @@
+import { DRUG_CLASSES_1_TO_3, DRUGS_GROUP_1_TO_3 } from "./drugsGroup1to3";
+import { DRUG_CLASSES_4_TO_9, DRUGS_GROUP_4_TO_9 } from "./drugsGroup4to9";
+import { CANCER_OVERVIEW, WARNING_SIGNS, PREVENTIVE_SUPERFOODS } from "./generalInfo";
+import { PATHOPHYSIOLOGY_INFO, CELL_CYCLE_PHASES, CHEMO_REGIMENS, CHEMOTHERAPY_MODALITIES } from "./pathophysiology";
+import { Drug, DrugClass } from "../types";
+
+export const ALL_DRUG_CLASSES: DrugClass[] = [
+  ...DRUG_CLASSES_1_TO_3,
+  ...DRUG_CLASSES_4_TO_9
+];
+
+export const ALL_DRUGS: Drug[] = [
+  ...DRUGS_GROUP_1_TO_3,
+  ...DRUGS_GROUP_4_TO_9
+];
+
+export {
+  CANCER_OVERVIEW,
+  WARNING_SIGNS,
+  PREVENTIVE_SUPERFOODS,
+  PATHOPHYSIOLOGY_INFO,
+  CELL_CYCLE_PHASES,
+  CHEMO_REGIMENS,
+  CHEMOTHERAPY_MODALITIES
+};
