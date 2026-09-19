@@ -106,6 +106,7 @@ export interface QuizQuestion {
   explanation: string;
   topic: string;
   slideReference: string;
+  questionType?: "direct" | "clinical" | string;
 }
 
 export interface EtiologyFactor {

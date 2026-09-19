@@ -15,7 +15,6 @@ interface HeaderProps {
   setDarkMode: (val: boolean | ((prev: boolean) => boolean)) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  onOpenQuiz: () => void;
   navItems: NavItem[];
   activeTab: string;
   onSelectTab: (id: string) => void;
@@ -26,7 +25,6 @@ export const Header: React.FC<HeaderProps> = ({
   setDarkMode,
   searchQuery,
   setSearchQuery,
-  onOpenQuiz,
   navItems,
   activeTab,
   onSelectTab
@@ -34,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 backdrop-blur-md bg-white/95 dark:bg-slate-900/95 border-b border-slate-200/90 dark:border-slate-800/90 shadow-sm transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3.5 flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Top Row on mobile: Logo + Actions */}
+        {/* Top Row on mobile: Logo + Theme Toggle */}
         <div className="flex items-center justify-between w-full md:w-auto gap-3">
           <div className="flex items-center gap-2.5 sm:gap-3.5">
             <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 flex-shrink-0">
@@ -50,18 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Quick Actions shown on mobile right next to logo */}
+          {/* Theme toggle on mobile */}
           <div className="flex md:hidden items-center gap-2">
-            <button
-              id="header-mobile-gemini-quiz-button"
-              onClick={onOpenQuiz}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-gradient-to-r from-emerald-600 to-indigo-600 text-white shadow-sm"
-              title="Gemini MCQs"
-            >
-              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-              <span>MCQs</span>
-            </button>
-
             <button
               id="mobile-theme-toggle-button"
               onClick={() => setDarkMode((prev) => !prev)}
@@ -94,17 +82,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Desktop Actions (Gemini Quiz + Dark Mode) */}
+        {/* Desktop Theme toggle */}
         <div className="hidden md:flex items-center gap-2.5 justify-end">
-          <button
-            id="header-gemini-quiz-button"
-            onClick={onOpenQuiz}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>Gemini MCQs (10 Qs)</span>
-          </button>
-
           <button
             id="theme-toggle-button"
             onClick={() => setDarkMode((prev) => !prev)}

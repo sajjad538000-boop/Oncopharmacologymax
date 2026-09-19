@@ -291,34 +291,57 @@ const PRE_CURATED_MCQS = [
   }
 ];
 
-// Endpoint: Generate 10 randomized MCQs using Gemini or fallback
+// Endpoint: Generate randomized MCQs using Visitor's Gemini API Key
 app.post("/api/generate-mcqs", async (req, res) => {
   try {
-    const { topic = "all", customFocus = "" } = req.body || {};
-    const ai = getGenAIClient();
+    const {
+      topic = "all",
+      customFocus = "",
+      count = 10,
+      questionType = "mixed",
+      apiKey = ""
+    } = req.body || {};
 
-    if (!ai) {
-      // Return randomized 10 questions from pre-curated pool
-      const shuffled = [...PRE_CURATED_MCQS].sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, 10);
-      return res.json({
-        success: true,
-        source: "curated_archive",
-        topic,
-        questions: selected,
-        message: "Generated 10 high-yield board questions from Dr. Salah's lecture archive.",
+    const visitorKey = (typeof apiKey === "string" ? apiKey : "").trim();
+    if (!visitorKey) {
+      return res.status(400).json({
+        success: false,
+        error: "مفتاح Gemini API إلزامي لتوليد الأسئلة. يرجى إدخال مفتاحك الشخصي للاستمرار دون التأثير على الحساب المشترك.",
       });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: visitorKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const questionCount = Math.max(3, Math.min(25, Number(count) || 10));
+
+    let styleInstruction = "";
+    if (questionType === "direct") {
+      styleInstruction = "Strict Question Style Requirement: EVERY question MUST be a direct pharmacology / factual recall question testing exact mechanisms of action, molecular targets, specific enzymes (e.g. TPMT, DPD, CYP2D6, CYP19A1), antidotes (Mesna, Dexrazoxane, Leucovorin), drug classes, classifications, contraindications, and lecture slide facts.";
+    } else if (questionType === "clinical") {
+      styleInstruction = "Strict Question Style Requirement: EVERY question MUST be a realistic clinical case study / patient vignette (e.g. 'A 63-year-old female with stage IV breast cancer receiving...', 'A 45-year-old male with ALL undergoing high-dose Methotrexate...', presenting signs, laboratory parameters, and choosing the optimal antineoplastic, managing toxicities, or drug interactions).";
+    } else {
+      styleInstruction = "Strict Question Style Requirement: Provide a balanced 50/50 mix of direct pharmacology questions and clinical patient case vignettes.";
     }
 
     const prompt = `You are an expert Professor of Medical Oncology and Pharmacology preparing board-style multiple-choice questions (MCQs) for pharmacy and medical students based strictly on Dr. Salah's lecture slides "Anti-Cancer Drugs".
 
 Topic focus requested: "${topic}" ${customFocus ? `with emphasis on: ${customFocus}` : ""}.
+Target Question Count: EXACTLY ${questionCount} questions.
+Question Type: ${questionType}.
+${styleInstruction}
 
 Review the full lecture text below:
 ${LECTURE_SLIDE_CONTEXT}
 
 Task:
-Generate EXACTLY 10 distinct, challenging, highly educational multiple-choice questions (MCQs) covering diverse random aspects of the lecture (such as pharmacology mechanisms, clinical uses, pharmacokinetics, black-box warnings, adverse effects, antidotes, combination regimens, warning signs, pathophysiology, and cancer prevention foods/lifestyle).
+Generate EXACTLY ${questionCount} distinct, challenging, highly educational multiple-choice questions (MCQs) covering the lecture.
 
 Format requirements:
 - Each question must have EXACTLY 4 plausible options.
@@ -326,6 +349,7 @@ Format requirements:
 - The correct answer index must be 0, 1, 2, or 3.
 - Provide a clear, high-yield clinical explanation explaining WHY the correct option is right and referencing the lecture facts.
 - State the topic and the slide/category reference.
+- Set questionType to either "direct" or "clinical" for each question.
 - Return ONLY valid JSON adhering to the specified schema.`;
 
     const response = await ai.models.generateContent({
@@ -352,6 +376,7 @@ Format requirements:
                   explanation: { type: Type.STRING },
                   topic: { type: Type.STRING },
                   slideReference: { type: Type.STRING },
+                  questionType: { type: Type.STRING },
                 },
                 required: [
                   "id",
@@ -371,36 +396,39 @@ Format requirements:
     });
 
     const parsed = JSON.parse(response.text?.trim() || "{}");
-    if (Array.isArray(parsed.questions) && parsed.questions.length >= 8) {
+    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
       return res.json({
         success: true,
         source: "gemini_ai",
         topic,
-        questions: parsed.questions.slice(0, 10),
-        message: "Successfully generated 10 fresh interactive MCQs using Gemini AI.",
+        questionType,
+        count: parsed.questions.length,
+        questions: parsed.questions,
+        message: `تم توليد ${parsed.questions.length} أسئلة بنجاح عبر Gemini AI باستخدام مفتاحك الشخصي.`,
       });
     }
 
-    // Fallback if model output was incomplete
-    const shuffled = [...PRE_CURATED_MCQS].sort(() => 0.5 - Math.random());
-    return res.json({
-      success: true,
-      source: "curated_archive",
-      topic,
-      questions: shuffled.slice(0, 10),
-      message: "Generated 10 questions from lecture question bank.",
+    return res.status(500).json({
+      success: false,
+      error: "لم يتمكن الذكاء الاصطناعي من صياغة الأسئلة بالشكل المطلوب، يرجى المحاولة مرة أخرى.",
     });
   } catch (error: any) {
     console.error("Gemini MCQ generation error:", error);
-    // Graceful fallback to pre-curated pool
-    const shuffled = [...PRE_CURATED_MCQS].sort(() => 0.5 - Math.random());
-    return res.json({
-      success: true,
-      source: "curated_archive_fallback",
-      topic: req.body?.topic || "all",
-      questions: shuffled.slice(0, 10),
-      message: "Generated 10 questions from verified oncology question bank.",
-      error: error.message,
+    let userMsg = "حدث خطأ أثناء معالجة الطلب عبر الذكاء الاصطناعي.";
+    const errMsg = String(error?.message || "");
+
+    if (errMsg.includes("API_KEY_INVALID") || errMsg.includes("invalid API key") || errMsg.includes("API key not valid")) {
+      userMsg = "مفتاح Gemini API غير صالح. يرجى التأكد من نسخ المفتاح الصحيح من Google AI Studio.";
+    } else if (errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota") || errMsg.includes("rate limit")) {
+      userMsg = "تم تجاوز الحصة المتاحة لمفتاح API الخاص بك. يرجى الانتظار قليلاً أو استخدام مفتاح آخر.";
+    } else if (errMsg.includes("PERMISSION_DENIED")) {
+      userMsg = "تم رفض الإذن لمفتاح API. يرجى التأكد من تفعيل خدمة Gemini API لمفتاحك.";
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: userMsg,
+      details: error.message,
     });
   }
 });

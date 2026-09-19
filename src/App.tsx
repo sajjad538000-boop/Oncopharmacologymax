@@ -5,14 +5,13 @@ import { CellCycleVisualizer } from "./components/CellCycleVisualizer";
 import { DrugClassesExplorer } from "./components/DrugClassesExplorer";
 import { RegimensMatrix } from "./components/RegimensMatrix";
 import { DietarySection } from "./components/DietarySection";
-import { GeminiQuizSection } from "./components/GeminiQuizSection";
+import { FloatingQuizGenerator } from "./components/FloatingQuizGenerator";
 import {
   BookOpen,
   Activity,
   Pill,
   FlaskConical,
-  Heart,
-  Sparkles
+  Heart
 } from "lucide-react";
 
 export default function App() {
@@ -96,14 +95,6 @@ export default function App() {
       shortLabel: "Superfoods",
       icon: Heart,
       badge: "Slides 12–13"
-    },
-    {
-      id: "quiz",
-      label: "Gemini AI MCQs",
-      shortLabel: "Gemini MCQs",
-      icon: Sparkles,
-      badge: "10 Live Qs",
-      highlight: true
     }
   ];
 
@@ -118,9 +109,6 @@ export default function App() {
         navItems={navItems}
         activeTab={activeTab}
         onSelectTab={handleTabChange}
-        onOpenQuiz={() => {
-          handleTabChange("quiz");
-        }}
       />
 
       {/* Main Container */}
@@ -144,10 +132,11 @@ export default function App() {
           {activeTab === "regimens" && <RegimensMatrix />}
 
           {activeTab === "superfoods" && <DietarySection />}
-
-          {activeTab === "quiz" && <GeminiQuizSection />}
         </div>
       </main>
+
+      {/* Floating AI Quiz Generator (Located at bottom-right) */}
+      <FloatingQuizGenerator />
 
       {/* Educational Footer */}
       <footer className="mt-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-8 transition-colors">
