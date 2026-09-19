@@ -21,6 +21,7 @@ import {
   Target
 } from "lucide-react";
 import { QuizQuestion } from "../types";
+import { generateQuiz, getCuratedQuestions } from "../services/quizService";
 
 export const FloatingQuizGenerator: React.FC = () => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -62,10 +63,12 @@ export const FloatingQuizGenerator: React.FC = () => {
     { id: "Etiology, Risk Factors & Warning Signs", label: "أسباب السرطان، عوامل الخطر، وعلامات الإنذار المبكر" }
   ];
 
+  const [quizSource, setQuizSource] = useState<string>("gemini_ai");
+
   const handleStartGeneration = async () => {
     const trimmedKey = apiKey.trim().replace(/^["']|["']$/g, "");
     if (!trimmedKey) {
-      setError("حقل مفتاح API إلزامي لتوليد أسئلة متجددة بالذكاء الاصطناعي، أو يمكنك استخدام بنك الأسئلة المعتمد أدناه.");
+      setError("حقل مفتاح API إلزامي لتوليد أسئلة متجددة بالذكاء الاصطناعي، أو يمكنك استخدام بنك الأسئلة المعتمد أدناه مباشرة.");
       setErrorDetails(null);
       return;
     }
@@ -80,39 +83,31 @@ export const FloatingQuizGenerator: React.FC = () => {
     setCurrentIndex(0);
 
     try {
-      const res = await fetch("/api/generate-mcqs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey: trimmedKey,
-          count,
-          questionType,
-          topic: selectedTopic === "All Topics" ? undefined : selectedTopic
-        })
+      const result = await generateQuiz({
+        apiKey: trimmedKey,
+        count,
+        questionType,
+        topic: selectedTopic === "All Topics" ? undefined : selectedTopic
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        if (data.details) {
-          setErrorDetails(data.details);
-        }
-        throw new Error(data.error || "تعذر توليد الأسئلة. يرجى التحقق من صحة المفتاح.");
-      }
-
-      if (Array.isArray(data.questions) && data.questions.length > 0) {
-        setQuestions(data.questions);
+      if (result.success && Array.isArray(result.questions) && result.questions.length > 0) {
+        setQuestions(result.questions);
+        setQuizSource(result.source);
         setStep("quiz");
       } else {
-        throw new Error("لم تصل أسئلة صالحة من النموذج، يرجى إعادة المحاولة.");
+        throw new Error(result.error || "لم تصل أسئلة صالحة من النموذج، يرجى إعادة المحاولة.");
       }
     } catch (err: any) {
       console.error("Quiz generation error:", err);
       setError(err.message || "حدث خطأ أثناء معالجة الطلب عبر الذكاء الاصطناعي.");
+      if (err.rawDetails) {
+        setErrorDetails(err.rawDetails);
+      }
       setStep("config");
     }
   };
 
-  const handleUseCuratedBank = async () => {
+  const handleUseCuratedBank = () => {
     setError(null);
     setErrorDetails(null);
     setShowErrorDetails(false);
@@ -121,20 +116,16 @@ export const FloatingQuizGenerator: React.FC = () => {
     setCurrentIndex(0);
 
     try {
-      const res = await fetch("/api/generate-mcqs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          useCuratedBackup: true,
-          count,
-          questionType,
-          topic: selectedTopic === "All Topics" ? undefined : selectedTopic
-        })
-      });
+      // Direct local extraction - works instantly on Netlify and offline!
+      const loadedQuestions = getCuratedQuestions(
+        count,
+        selectedTopic === "All Topics" ? undefined : selectedTopic,
+        questionType
+      );
 
-      const data = await res.json();
-      if (Array.isArray(data.questions) && data.questions.length > 0) {
-        setQuestions(data.questions);
+      if (Array.isArray(loadedQuestions) && loadedQuestions.length > 0) {
+        setQuestions(loadedQuestions);
+        setQuizSource("curated_archive");
         setStep("quiz");
       } else {
         throw new Error("تعذر تحميل بنك الأسئلة المعتمد.");
@@ -496,6 +487,15 @@ export const FloatingQuizGenerator: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                         {currentQ.questionType === "clinical" ? "حالة سريرية 🩺" : "سؤال مباشر 🎯"}
                       </span>
+                      {quizSource === "curated_archive" ? (
+                        <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          بنك السلايدات المعتمد ✨
+                        </span>
+                      ) : (
+                        <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          Gemini AI ⚡
+                        </span>
+                      )}
                     </div>
 
                     <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
